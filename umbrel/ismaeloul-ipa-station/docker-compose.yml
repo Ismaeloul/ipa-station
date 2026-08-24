@@ -17,6 +17,11 @@ services:
 
   anisette:
     image: ghcr.io/ismaeloul/anisette-v3-server:0.1.0
+    # Las imagenes se compilan en el propio NAS con scripts/build-on-umbrel.sh
+    # y existen solo en local. Sin esta linea, Umbrel intenta descargarlas de
+    # GHCR y la instalacion muere con "denied" (comprobado en el NAS).
+    # El dia que se publiquen en GHCR, borra las dos lineas pull_policy.
+    pull_policy: never
     container_name: ismaeloul-ipa-station_anisette_1
     restart: unless-stopped
     volumes:
@@ -28,6 +33,7 @@ services:
 
   jas:
     image: ghcr.io/ismaeloul/jas:0.1.0
+    pull_policy: never
     container_name: ismaeloul-ipa-station_jas_1
     restart: unless-stopped
     depends_on:

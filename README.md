@@ -84,6 +84,21 @@ ghcr.io/ismaeloul/jas:0.1.0
 ghcr.io/ismaeloul/anisette-v3-server:0.1.0
 ```
 
+### Alternativa: compilar en el propio Umbrel
+
+Si Actions no está disponible (cuenta bloqueada, sin minutos) o simplemente no
+quieres depender de GitHub, se compila en el NAS y no hace falta GHCR:
+
+```bash
+git clone https://github.com/Ismaeloul/ipa-station.git
+cd ipa-station
+bash scripts/build-on-umbrel.sh
+```
+
+Tarda entre 40 y 90 minutos en el N300, así que lánzalo con `screen` o `tmux`.
+Las imágenes se etiquetan con el mismo nombre que tendrían en GHCR, de forma
+que el resto de la guía sigue igual: no hay que tocar ningún compose.
+
 > **Sobre las versiones fijadas.** Los dos Dockerfile clavan un commit concreto
 > de upstream (`JAS_REF` y `ANISETTE_REF`). jas no tiene releases y su `master`
 > puede romper la compilación cualquier día, así que actualizar es cambiar ese

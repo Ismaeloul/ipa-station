@@ -34,7 +34,7 @@ servidor no pudo escribir su carpeta.
    docker inspect --format '{{.Config.Image}}' ismaeloul-ipa-station_anisette_1
    ```
 
-   Tiene que decir `ghcr.io/ismaeloul/anisette-v3-server`.
+   Tiene que decir `ipa-station/anisette-v3-server`.
 
 2. **¿Apple está caído?** Es una causa conocida y no depende de ti. Espera un
    rato y reintenta antes de tocar nada.
@@ -165,36 +165,46 @@ fechas. La ventana es deslizante: se van liberando solos.
 
 ---
 
-## Umbrel no puede descargar las imágenes
+## Umbrel dice `denied` al instalar
 
 **Síntoma:** la instalación falla con `denied` o `manifest unknown`.
 
-Los paquetes de GHCR **nacen privados** y el Umbrel no tiene credenciales.
-Ponlos públicos: perfil de GitHub → **Packages** → el paquete → *Package
-settings* → **Change visibility → Public**. Hay que hacerlo con `jas` y con
-`anisette-v3-server`.
+Umbrel está intentando descargar las imágenes de un registro. No existen en
+ninguno: se compilan en el NAS y viven solo ahí. Comprueba que los dos
+servicios de `docker-compose.yml` llevan la línea:
 
-Comprueba desde el NAS:
-
-```bash
-docker pull ghcr.io/ismaeloul/jas:0.1.0
+```yaml
+    pull_policy: never
 ```
 
----
+## "No such image" al arrancar
 
-## La compilación en GitHub Actions falla
+Las imágenes no están construidas, o se construyeron con otro nombre o versión.
+Mira qué hay:
 
+```bash
+docker images --filter "reference=ipa-station/*"
+```
+
+Tienen que aparecer `ipa-station/jas` y `ipa-station/anisette-v3-server`, y la
+etiqueta debe coincidir con la del compose (`0.1.0`). Si falta alguna, vuelve a
+lanzar `bash scripts/build-on-umbrel.sh`.
+
+## La compilación falla
+
+Se compila en el NAS, así que los logs están en `~/build.log`.
+
+- **Se queda sin espacio:** Rust más WASM comen bastante disco. Libera y
+  reintenta; `docker system prune -f` recupera lo de builds anteriores.
+- **Se queda sin memoria (`Killed`, `signal: 9`):** baja los hilos de
+  compilación. `bash scripts/build-on-umbrel.sh 0.1.0 2`.
 - **Error de `sqlx` sobre una base de datos:** falta `SQLX_OFFLINE=true`. Ya
   está en el Dockerfile; si lo tocaste, devuélvelo.
-- **`cargo leptos` no encontrado:** el paso `cargo install --locked cargo-leptos`
-  falló, casi siempre por red. Relanza el workflow.
+- **`cargo leptos` no encontrado:** el `cargo install --locked cargo-leptos`
+  falló, casi siempre por red. Reintenta.
 - **Rompe al compilar jas:** upstream movió `master` y el commit fijado ya no
   encaja con alguna dependencia git (`isideload` va por rama, no por versión).
   Vuelve al SHA que funcionaba en `docker/jas/Dockerfile`.
-- **Se queda sin espacio:** compilar Rust más WASM come disco. Si el runner
-  peta, añade un paso de limpieza antes del build.
-
----
 
 ## El JIT no va (emuladores)
 

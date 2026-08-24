@@ -61,33 +61,13 @@ tres huecos de apps** que permite Apple.
 
 ---
 
-## Parte A — Publicar las imágenes
+## Parte A — Compilar las imágenes
 
-jas no publica imagen de Docker, así que la construimos nosotros. Se compila en
-GitHub Actions, no en el NAS: son Rust y WebAssembly y dejarían el N300 frito
-durante media hora.
+jas no publica imagen de Docker, así que la construimos nosotros. Y la
+construimos **en el propio Umbrel**: nada de registros externos, nada de
+cuentas de terceros. Las imágenes nacen y viven en el NAS.
 
-1. Sube esta carpeta a un repositorio de GitHub (por ejemplo `Ismaeloul/ipa-station`).
-2. En GitHub: pestaña **Actions** → **Build images** → **Run workflow**, versión
-   `0.1.0`.
-3. Espera. La primera vez tarda **entre 20 y 35 minutos** (compilar `cargo-leptos`
-   y todas las dependencias). Las siguientes van con caché y bajan mucho.
-4. **Paso que se olvida siempre:** los paquetes de GHCR nacen privados y el
-   Umbrel no tiene credenciales para bajarlos. Ve a tu perfil de GitHub →
-   **Packages** → `jas` → *Package settings* → **Change visibility → Public**.
-   Repite con `anisette-v3-server`.
-
-Al terminar tendrás:
-
-```
-ghcr.io/ismaeloul/jas:0.1.0
-ghcr.io/ismaeloul/anisette-v3-server:0.1.0
-```
-
-### Alternativa: compilar en el propio Umbrel
-
-Si Actions no está disponible (cuenta bloqueada, sin minutos) o simplemente no
-quieres depender de GitHub, se compila en el NAS y no hace falta GHCR:
+Por SSH:
 
 ```bash
 git clone https://github.com/Ismaeloul/ipa-station.git
@@ -95,9 +75,29 @@ cd ipa-station
 bash scripts/build-on-umbrel.sh
 ```
 
-Tarda entre 40 y 90 minutos en el N300, así que lánzalo con `screen` o `tmux`.
-Las imágenes se etiquetan con el mismo nombre que tendrían en GHCR, de forma
-que el resto de la guía sigue igual: no hay que tocar ningún compose.
+Tarda entre **40 y 90 minutos** en el N300: jas es Rust más WebAssembly y hay
+que compilar también `cargo-leptos`. Lánzalo con `nohup` o `tmux` si no quieres
+depender de que aguante la sesión SSH:
+
+```bash
+sudo nohup bash scripts/build-on-umbrel.sh > ~/build.log 2>&1 &
+```
+
+Compila con 4 hilos de los 8 para que Jellyfin, Immich y AceStream sigan
+respondiendo mientras tanto. Si prefieres ir a saco:
+`bash scripts/build-on-umbrel.sh 0.1.0 8`.
+
+Al terminar tendrás, solo en local:
+
+```
+ipa-station/jas:0.1.0
+ipa-station/anisette-v3-server:0.1.0
+```
+
+Los nombres no llevan prefijo de registro **a propósito**: estas imágenes no se
+descargan de ningún sitio. Por eso los dos servicios del compose llevan
+`pull_policy: never` — sin eso, Umbrel intentaría descargarlas al instalar y
+fallaría con `denied`.
 
 > **Sobre las versiones fijadas.** Los dos Dockerfile clavan un commit concreto
 > de upstream (`JAS_REF` y `ANISETTE_REF`). jas no tiene releases y su `master`
@@ -248,9 +248,7 @@ IPAs/
 ├── umbrel/
 │   └── ismaeloul-ipa-station/    lo que se copia a tu tienda
 ├── scripts/            utilidades de diagnóstico
-├── docker-compose.yml  el stack suelto, para probar por SSH
-└── .github/workflows/  compilación y publicación en GHCR
-```
+└── docker-compose.yml  el stack suelto, para probar por SSH
 
 ### Sitio para la Fase 2
 

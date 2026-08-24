@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Compila las dos imagenes EN EL PROPIO UMBREL, sin pasar por GitHub Actions
-# ni por GHCR. Util si Actions no esta disponible, o si prefieres no depender
-# de infraestructura ajena para nada.
+# Compila las dos imagenes EN EL PROPIO UMBREL. Es la unica forma prevista:
+# las imagenes no se publican en ningun registro, ni hace falta. Todo el
+# stack se construye y vive en el NAS.
 #
 # Uso, por SSH en el Umbrel:
 #
@@ -18,7 +18,7 @@ VERSION="${1:-0.1.0}"
 # Trabajos de compilacion en paralelo. Por defecto la mitad de los hilos, para
 # que Jellyfin, Immich y AceStream sigan respondiendo mientras esto compila.
 JOBS="${2:-4}"
-REGISTRY_NS="ghcr.io/ismaeloul"
+IMAGE_NS="ipa-station"
 
 cd "$(dirname "$0")/.."
 
@@ -31,17 +31,18 @@ if [ "${AVAIL_GB:-0}" -lt 15 ]; then
   echo "AVISO: quedan ${AVAIL_GB}G libres. Compilar Rust come disco; 15G es lo minimo comodo."
 fi
 
-# Las imagenes se etiquetan con el MISMO nombre que tendrian en GHCR, para que
-# los docker-compose.yml funcionen sin tocar una linea. Docker usa la imagen
-# local y no intenta descargarla mientras exista.
+# Nombres locales a proposito: estas imagenes no viven en ningun registro, ni
+# falta que hace. Un nombre tipo ghcr.io/... daria a entender que se pueden
+# descargar de algun sitio, y no es el caso. Los docker-compose.yml usan estos
+# mismos nombres con pull_policy: never.
 build () {
   local name="$1" context="$2"; shift 2
   echo
   echo "==> Compilando $name  (contexto: $context)"
   local t0=$SECONDS
   docker build "$@" \
-    --tag "${REGISTRY_NS}/${name}:${VERSION}" \
-    --tag "${REGISTRY_NS}/${name}:latest" \
+    --tag "${IMAGE_NS}/${name}:${VERSION}" \
+    --tag "${IMAGE_NS}/${name}:latest" \
     "$context"
   echo "==> $name listo en $(( (SECONDS - t0) / 60 )) min"
 }
@@ -53,7 +54,7 @@ build "jas"                "docker/jas" --build-arg "CARGO_JOBS=${JOBS}"
 
 echo
 echo "==> Imagenes disponibles"
-docker images --filter "reference=${REGISTRY_NS}/*" \
+docker images --filter "reference=${IMAGE_NS}/*" \
   --format '  {{.Repository}}:{{.Tag}}  {{.Size}}'
 
 cat <<EOF

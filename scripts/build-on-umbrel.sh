@@ -15,6 +15,9 @@
 set -euo pipefail
 
 VERSION="${1:-0.1.0}"
+# Trabajos de compilacion en paralelo. Por defecto la mitad de los hilos, para
+# que Jellyfin, Immich y AceStream sigan respondiendo mientras esto compila.
+JOBS="${2:-4}"
 REGISTRY_NS="ghcr.io/ismaeloul"
 
 cd "$(dirname "$0")/.."
@@ -32,11 +35,11 @@ fi
 # los docker-compose.yml funcionen sin tocar una linea. Docker usa la imagen
 # local y no intenta descargarla mientras exista.
 build () {
-  local name="$1" context="$2"
+  local name="$1" context="$2"; shift 2
   echo
   echo "==> Compilando $name  (contexto: $context)"
   local t0=$SECONDS
-  docker build \
+  docker build "$@" \
     --tag "${REGISTRY_NS}/${name}:${VERSION}" \
     --tag "${REGISTRY_NS}/${name}:latest" \
     "$context"
@@ -46,7 +49,7 @@ build () {
 # El anisette primero: es el rapido, y si algo esta mal en el entorno se ve
 # enseguida en vez de a la hora de compilar Rust.
 build "anisette-v3-server" "docker/anisette"
-build "jas"                "docker/jas"
+build "jas"                "docker/jas" --build-arg "CARGO_JOBS=${JOBS}"
 
 echo
 echo "==> Imagenes disponibles"

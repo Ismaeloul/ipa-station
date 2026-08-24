@@ -32,6 +32,12 @@ RUN git clone https://github.com/jkcoxson/jas.git . \
 # commiteado, asi que en modo offline compila sin necesitar SQLite arrancado.
 ENV SQLX_OFFLINE=true
 
+# El N300 tiene 8 hilos, pero si se compila en el propio NAS esa maquina esta
+# a la vez sirviendo Jellyfin, Immich y AceStream. Con 4 trabajos el build
+# tarda algo mas pero no deja el resto pidiendo limosna. En CI se puede subir.
+ARG CARGO_JOBS=4
+ENV CARGO_BUILD_JOBS=${CARGO_JOBS}
+
 RUN cargo leptos build --release
 
 ############################################################

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Compila las dos imagenes EN EL PROPIO UMBREL. Es la unica forma prevista:
-# las imagenes no se publican en ningun registro, ni hace falta. Todo el
-# stack se construye y vive en el NAS.
+# Compila las dos imagenes EN EL PROPIO UMBREL y las publica en un registro
+# local que tambien corre en el NAS. Nada sale de la maquina.
 #
 # Uso, por SSH en el Umbrel:
 #
@@ -10,15 +9,27 @@
 #   bash scripts/build-on-umbrel.sh
 #
 # Tarda. En un N300 cuenta entre 40 y 90 minutos la primera vez: jas es Rust
-# mas WebAssembly y hay que compilar tambien cargo-leptos. Lanzalo con screen
-# o tmux si te preocupa perder la sesion SSH.
+# mas WebAssembly y hay que compilar tambien cargo-leptos. Lanzalo con nohup
+# si te preocupa perder la sesion SSH.
+#
+# POR QUE HACE FALTA UN REGISTRO LOCAL
+# Umbrel no arranca la app con `docker compose up` a secas: antes hace un
+# `docker pull` de cada `image:` del compose, uno por uno, y si alguno falla
+# aborta la instalacion (umbreld: apps/app.ts pull(), utilities/docker-pull.ts).
+# Ese pull IGNORA `pull_policy: never`, asi que no basta con tener la imagen en
+# local: tiene que existir un registro del que descargarla. El registro va
+# atado a 127.0.0.1, o sea que no se expone a la red, y Docker acepta
+# localhost como registro inseguro sin tener que configurar nada.
 set -euo pipefail
 
 VERSION="${1:-0.1.0}"
 # Trabajos de compilacion en paralelo. Por defecto la mitad de los hilos, para
 # que Jellyfin, Immich y AceStream sigan respondiendo mientras esto compila.
 JOBS="${2:-4}"
-IMAGE_NS="ipa-station"
+
+REGISTRY="localhost:5000"
+IMAGE_NS="${REGISTRY}/ipa-station"
+REGISTRY_CONTAINER="ipa-station-registry"
 
 cd "$(dirname "$0")/.."
 
@@ -31,10 +42,37 @@ if [ "${AVAIL_GB:-0}" -lt 15 ]; then
   echo "AVISO: quedan ${AVAIL_GB}G libres. Compilar Rust come disco; 15G es lo minimo comodo."
 fi
 
-# Nombres locales a proposito: estas imagenes no viven en ningun registro, ni
-# falta que hace. Un nombre tipo ghcr.io/... daria a entender que se pueden
-# descargar de algun sitio, y no es el caso. Los docker-compose.yml usan estos
-# mismos nombres con pull_policy: never.
+# ---------------------------------------------------------------------------
+# Registro local
+# ---------------------------------------------------------------------------
+ensure_registry () {
+  if [ -n "$(docker ps -q -f "name=^${REGISTRY_CONTAINER}$")" ]; then
+    echo "==> Registro local ya en marcha"
+    return
+  fi
+  if [ -n "$(docker ps -aq -f "name=^${REGISTRY_CONTAINER}$")" ]; then
+    echo "==> Arrancando el registro local existente"
+    docker start "${REGISTRY_CONTAINER}" >/dev/null
+  else
+    echo "==> Creando el registro local en ${REGISTRY}"
+    docker run -d \
+      --name "${REGISTRY_CONTAINER}" \
+      --restart unless-stopped \
+      -p 127.0.0.1:5000:5000 \
+      -v ipa-station-registry-data:/var/lib/registry \
+      registry:2 >/dev/null
+  fi
+  # Darle un momento antes del primer push
+  for _ in $(seq 1 15); do
+    curl -fsS http://127.0.0.1:5000/v2/ >/dev/null 2>&1 && return
+    sleep 1
+  done
+  echo "El registro local no responde en ${REGISTRY}"; exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Build + push
+# ---------------------------------------------------------------------------
 build () {
   local name="$1" context="$2"; shift 2
   echo
@@ -44,8 +82,13 @@ build () {
     --tag "${IMAGE_NS}/${name}:${VERSION}" \
     --tag "${IMAGE_NS}/${name}:latest" \
     "$context"
+  echo "==> Publicando $name en el registro local"
+  docker push -q "${IMAGE_NS}/${name}:${VERSION}"
+  docker push -q "${IMAGE_NS}/${name}:latest"
   echo "==> $name listo en $(( (SECONDS - t0) / 60 )) min"
 }
+
+ensure_registry
 
 # El anisette primero: es el rapido, y si algo esta mal en el entorno se ve
 # enseguida en vez de a la hora de compilar Rust.
@@ -53,7 +96,7 @@ build "anisette-v3-server" "docker/anisette"
 build "jas"                "docker/jas" --build-arg "CARGO_JOBS=${JOBS}"
 
 echo
-echo "==> Imagenes disponibles"
+echo "==> Imagenes publicadas"
 docker images --filter "reference=${IMAGE_NS}/*" \
   --format '  {{.Repository}}:{{.Tag}}  {{.Size}}'
 
@@ -61,13 +104,10 @@ cat <<EOF
 
 ==> Hecho.
 
-Ya puedes instalar IPA Station desde la tienda de Umbrel: encontrara las
-imagenes en local y no necesitara descargar nada.
+Ya puedes instalar IPA Station desde la tienda de Umbrel.
 
-Si la instalacion falla igualmente con un error de descarga, es que Umbrel
-esta forzando un pull. En ese caso anade esta linea a los servicios 'jas' y
-'anisette' de umbrel/ismaeloul-ipa-station/docker-compose.yml:
-
-    pull_policy: never
+El registro local (contenedor ${REGISTRY_CONTAINER}) tiene que seguir en
+marcha: Umbrel descarga de ahi cada vez que instala, actualiza o recrea la
+app. Arranca solo con Docker gracias a restart: unless-stopped.
 
 EOF

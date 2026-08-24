@@ -15,7 +15,7 @@ services:
   # El que le dice a Apple "soy un Mac de verdad". Sin esto no hay forma de
   # sacar certificados con un Apple ID gratuito.
   anisette:
-    image: ipa-station/anisette-v3-server:latest
+    image: localhost:5000/ipa-station/anisette-v3-server:latest
     container_name: ipa-station_anisette
     restart: unless-stopped
     volumes:
@@ -29,7 +29,7 @@ services:
 
   # El panel web: firma, instala y refresca.
   jas:
-    image: ipa-station/jas:latest
+    image: localhost:5000/ipa-station/jas:latest
     container_name: ipa-station_jas
     restart: unless-stopped
     depends_on:

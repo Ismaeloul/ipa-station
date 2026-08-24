@@ -165,17 +165,33 @@ fechas. La ventana es deslizante: se van liberando solos.
 
 ---
 
-## Umbrel dice `denied` al instalar
+## La instalación falla al descargar las imágenes
 
-**Síntoma:** la instalación falla con `denied` o `manifest unknown`.
+**Síntoma:** instalar desde la tienda no hace nada, o `apps.install` devuelve
+`false`.
 
-Umbrel está intentando descargar las imágenes de un registro. No existen en
-ninguno: se compilan en el NAS y viven solo ahí. Comprueba que los dos
-servicios de `docker-compose.yml` llevan la línea:
+Umbrel hace un `docker pull` de cada imagen antes de arrancar la app, y ese
+pull ignora `pull_policy`. Si el registro local está parado, no hay de dónde
+bajarlas y la instalación aborta.
 
-```yaml
-    pull_policy: never
+```bash
+docker ps -f name=ipa-station-registry
 ```
+
+Si no aparece, arráncalo:
+
+```bash
+docker start ipa-station-registry
+```
+
+Y comprueba que las imágenes siguen dentro:
+
+```bash
+curl -s http://127.0.0.1:5000/v2/_catalog
+```
+
+Si el catálogo sale vacío, vuelve a lanzar `bash scripts/build-on-umbrel.sh`
+(con la caché de Docker tarda segundos, no vuelve a compilar).
 
 ## "No such image" al arrancar
 

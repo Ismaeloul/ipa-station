@@ -87,17 +87,28 @@ Compila con 4 hilos de los 8 para que Jellyfin, Immich y AceStream sigan
 respondiendo mientras tanto. Si prefieres ir a saco:
 `bash scripts/build-on-umbrel.sh 0.1.0 8`.
 
-Al terminar tendrás, solo en local:
+El script también levanta un **registro Docker local** en el propio NAS y
+publica ahí las imágenes:
 
 ```
-ipa-station/jas:0.1.0
-ipa-station/anisette-v3-server:0.1.0
+localhost:5000/ipa-station/jas:0.1.0
+localhost:5000/ipa-station/anisette-v3-server:0.1.0
 ```
 
-Los nombres no llevan prefijo de registro **a propósito**: estas imágenes no se
-descargan de ningún sitio. Por eso los dos servicios del compose llevan
-`pull_policy: never` — sin eso, Umbrel intentaría descargarlas al instalar y
-fallaría con `denied`.
+**Por qué hace falta ese registro.** Umbrel no arranca la app con un
+`docker compose up` a secas: antes hace un `docker pull` de cada `image:` del
+compose, uno a uno, y si alguno falla aborta la instalación. Ese pull **ignora
+`pull_policy: never`** (está en `umbreld: apps/app.ts` → `pull()`, y
+`utilities/docker-pull.ts` rechaza al primer error). O sea que no basta con
+tener la imagen en local: tiene que existir un registro del que bajarla.
+
+El registro está atado a `127.0.0.1`, así que no se expone a la red, y Docker
+acepta `localhost` como registro inseguro sin configurar nada. Sigue siendo
+todo local: nada sale del NAS.
+
+Ese contenedor (`ipa-station-registry`) tiene que quedarse encendido — Umbrel
+descarga de él cada vez que instala, actualiza o recrea la app. Arranca solo
+con Docker.
 
 > **Sobre las versiones fijadas.** Los dos Dockerfile clavan un commit concreto
 > de upstream (`JAS_REF` y `ANISETTE_REF`). jas no tiene releases y su `master`

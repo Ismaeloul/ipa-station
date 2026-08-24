@@ -49,6 +49,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # El contexto `inputs` solo existe en workflow_dispatch: referenciarlo
+      # en una ejecucion por push tumba el workflow antes de empezar
+      # (startup_failure). github.event.inputs es nulo sin dar error.
+      - name: Calcular etiqueta
+        id: meta
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ]; then V="main-$(git rev-parse --short HEAD)"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Etiquetando como :$V y :latest"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -58,7 +69,7 @@ jobs:
           # emulacion multiplicaria el tiempo de build sin que se use.
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:${{ inputs.version || 'latest' }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:${{ steps.meta.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:latest
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

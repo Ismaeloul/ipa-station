@@ -1,0 +1,25 @@
+# Secretos y estado local: nada de esto sube al repositorio
+.env
+data/
+*.db
+*.db-wal
+*.db-shm
+secret.key
+
+# Ficheros de emparejamiento del iPhone. Dan acceso al dispositivo:
+# tratalos como una credencial.
+*.plist
+*.mobiledevicepairing
+pairing/
+
+# IPAs: pesan y no son nuestros
+*.ipa
+ipas/
+
+# Certificados exportados para LiveContainer
+*.p12
+*.p
+
+# Ruido del sistema
+.DS_Store
+Thumbs.db

@@ -1,0 +1,69 @@
+# Stack independiente, para probarlo por SSH en el Umbrel sin pasar por la
+# tienda de apps. Lo que se instala de verdad esta en
+# umbrel/ismaeloul-ipa-station/. Los dos ficheros levantan lo mismo.
+#
+#   docker compose up -d
+#   -> panel en http://192.168.1.188:7795
+#
+# El Apple ID NO se configura aqui: se introduce en el panel web y solo se
+# guarda el token de sesion, cifrado. El .env solo lleva la clave de cifrado,
+# y si no la pones se genera sola en el primer arranque.
+
+name: ipa-station
+
+services:
+  # El que le dice a Apple "soy un Mac de verdad". Sin esto no hay forma de
+  # sacar certificados con un Apple ID gratuito.
+  anisette:
+    image: ghcr.io/ismaeloul/anisette-v3-server:latest
+    container_name: ipa-station_anisette
+    restart: unless-stopped
+    volumes:
+      # Volumen con nombre a proposito: el proceso corre sin privilegios y un
+      # bind mount desde el host llegaria como root, sin permiso de escritura.
+      # Si este estado se pierde hay que volver a provisionar contra Apple.
+      - anisette_data:/home/Alcoholic/.config/anisette-v3/lib/
+    networks:
+      - ipa
+    mem_limit: 512m
+
+  # El panel web: firma, instala y refresca.
+  jas:
+    image: ghcr.io/ismaeloul/jas:latest
+    container_name: ipa-station_jas
+    restart: unless-stopped
+    depends_on:
+      # service_started, no service_healthy: jas solo habla con el anisette al
+      # iniciar sesion o firmar, nunca al arrancar. Con service_healthy, un
+      # anisette que no levante dejaria el panel muerto y sin diagnostico.
+      anisette:
+        condition: service_started
+    environment:
+      ANISETTE_URL: "http://anisette:6969"
+      # Opcional: si lo defines en .env manda sobre la clave autogenerada.
+      JAS_SECRET_KEY: "${JAS_SECRET_KEY:-}"
+      # Cada cuanto revisa si algo esta a punto de caducar, y con cuantos
+      # dias de margen refirma. Apple da 7 dias; refrescar con 3 de colchon
+      # deja dos intentos de sobra si el NAS estuvo apagado.
+      JAS_INTERVAL_HOURS: "2"
+      JAS_REFRESH_WINDOW_DAYS: "3"
+    ports:
+      # 7795 esta libre: 7788 nutritrack, 7791/7792 ace player, 8449 craftdeck,
+      # 8095 AdGuard, 3005 umbrel-share.
+      - "7795:3000"
+    volumes:
+      - ./data:/data
+    networks:
+      - ipa
+    mem_limit: 1g
+
+networks:
+  ipa:
+    driver: bridge
+    # SIN network_mode: host. jas conecta al iPhone al puerto 49152 fijo
+    # (src/server/sideload/mod.rs:44), y una red bridge alcanza la LAN de
+    # sobra. Host solo haria falta para el descubrimiento por mDNS, que es un
+    # atajo para averiguar la IP: con una reserva DHCP no aporta nada.
+
+volumes:
+  anisette_data:

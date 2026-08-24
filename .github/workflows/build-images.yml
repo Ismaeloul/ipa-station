@@ -1,0 +1,71 @@
+name: Build images
+
+# Compila las dos imagenes y las publica en GHCR. El Umbrel solo hace pull:
+# compilar Rust + WASM en el N300 tardaria mucho mas y dejaria el NAS frito.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Etiqueta de version (p.ej. 0.1.0)"
+        required: true
+        default: "0.1.0"
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - ".github/workflows/build-images.yml"
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ismaeloul
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: jas
+            context: docker/jas
+          - name: anisette-v3-server
+            context: docker/anisette
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          # El Umbrel Pro es un Intel N300. Compilar tambien arm64 por
+          # emulacion multiplicaria el tiempo de build sin que se use.
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:${{ inputs.version || 'latest' }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Print digest
+        run: |
+          echo "Fija este digest en umbrel/ismaeloul-ipa-station/docker-compose.yml:"
+          docker buildx imagetools inspect \
+            "${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:latest" \
+            --format '{{ .Manifest.Digest }}'

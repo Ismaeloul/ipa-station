@@ -1,0 +1,6 @@
+# Todo esto acaba dentro de contenedores Linux. Un CRLF en entrypoint.sh
+# rompe el shebang y el contenedor no arranca.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.yml         text eol=lf
+*.toml        text eol=lf

@@ -196,6 +196,37 @@ de arriba: al nacer de cero, `device.json` se escribe ya con `com.apple.akd`.
 
 ---
 
+## Apple responde 429 al iniciar sesión
+
+**Síntomas:** el error ya no es un 503 sino
+
+```
+Failed to send proof login request
+HTTP status client error (429 Too Many Requests)
+```
+
+**Buenas noticias primero:** que el fallo sea en el *proof* y no en el
+*initial* significa que el primer paso funcionó — Apple aceptó la identidad
+del cliente y devolvió el salt y el reto SRP de la cuenta. Lo que falla es el
+segundo paso.
+
+**Qué es.** Apple limita los intentos de autenticación de esa cuenta. Se
+dispara con varios intentos seguidos en poco rato (tres en medio minuto ya
+cuentan) y desde septiembre de 2026 está especialmente sensible: media
+comunidad de sideloading reintentó a la vez cuando se arregló lo del client
+info.
+
+No es un bloqueo de la IP. Se comprueba mandando una petición cualquiera al
+mismo endpoint desde el NAS: si sigue contestando algo que no sea un 429, el
+borde no te tiene vetado y lo limitado es el flujo de login de la cuenta.
+
+**Qué hacer.** Esperar, sin reintentar. Cada intento nuevo reinicia la
+ventana. Una hora larga, y luego **un** intento, con la contraseña escrita y
+el teléfono a mano para el 2FA. Si vuelve a salir, deja pasar dos o tres
+horas; reintentar en ráfaga es lo único que lo empeora de verdad.
+
+---
+
 ## El 2FA de Apple no pasa
 
 - **El código llega y lo rechaza:** normalmente es que se metió tarde. Caducan

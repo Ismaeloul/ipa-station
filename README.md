@@ -87,6 +87,14 @@ Compila con 4 hilos de los 8 para que Jellyfin, Immich y AceStream sigan
 respondiendo mientras tanto. Si prefieres ir a saco:
 `bash scripts/build-on-umbrel.sh 0.1.0 8`.
 
+El tercer argumento recompila una sola imagen — `todo` (por defecto),
+`anisette` o `jas`. Mover un commit del anisette son minutos; volver a
+compilar jas por gusto es casi una hora:
+
+```bash
+bash scripts/build-on-umbrel.sh 0.1.1 4 anisette
+```
+
 El script también levanta un **registro Docker local** en el propio NAS y
 publica ahí las imágenes:
 

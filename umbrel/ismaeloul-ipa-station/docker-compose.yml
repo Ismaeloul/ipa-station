@@ -16,7 +16,9 @@ services:
       PROXY_AUTH_ADD: "true"
 
   anisette:
-    image: localhost:5000/ipa-station/anisette-v3-server:0.1.0
+    # 0.1.1 = upstream ae48fa1: el client info deja de decir com.apple.dt.Xcode,
+    # que es lo que Apple contesta con un 503 desde septiembre de 2026.
+    image: localhost:5000/ipa-station/anisette-v3-server:0.1.1
     # Las imagenes las compila y publica scripts/build-on-umbrel.sh en un
     # registro local del propio NAS, atado a 127.0.0.1. Umbrel hace un
     # `docker pull` de cada image: antes de arrancar nada, y ese pull ignora
@@ -51,7 +53,11 @@ services:
       # dias de margen deja varios intentos aunque el NAS pase un dia apagado.
       JAS_INTERVAL_HOURS: "2"
       JAS_REFRESH_WINDOW_DAYS: "3"
-      JAS_WORKER_THREADS: "2"
+      # Un solo trabajo de firma a la vez. Cada firma descomprime la app en
+      # /tmp, carga los binarios en RAM y vuelve a montar el zip entero en
+      # memoria; dos IPAs grandes en paralelo se comen el limite del
+      # contenedor y el kernel mata el proceso a mitad de la instalacion.
+      JAS_WORKER_THREADS: "1"
       # mDNS necesita multicast, que no cruza la red bridge de Umbrel. El
       # iPhone se registra con IP fija (reserva DHCP en el router) y jas
       # conecta al 49152, que es fijo: el descubrimiento no hace falta.
@@ -60,7 +66,11 @@ services:
       # Base de datos, clave de cifrado e IPAs guardados para el refresco.
       # Bind mount para poder verlo y copiarlo desde el NAS.
       - ${APP_DATA_DIR}/data:/data
-    mem_limit: 1g
+    # Con 1g el kernel mataba a jas firmando Pokemon GO (IPA de 170 MB): el
+    # IPA viaja en base64 dentro de la peticion, se decodifica en memoria y
+    # la firma vuelve a construir el zip completo en RAM. Un IPA grande
+    # necesita varias veces su tamano solo para una instalacion.
+    mem_limit: 4g
 
 volumes:
   anisette_data:

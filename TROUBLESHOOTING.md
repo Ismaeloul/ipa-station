@@ -127,6 +127,69 @@ y no cuesta nada probarlo.
 
 ---
 
+## Apple responde 503 al iniciar sesión
+
+**Síntomas:** el panel no deja entrar con el Apple ID y el error termina en
+
+```
+Received error response from grandslam
+HTTP status server error (503 Service Temporarily Unavailable)
+for url (https://gsa.apple.com/grandslam/GsService2)
+```
+
+Y antes de eso, con la sesión que ya tenías guardada, un
+`Developer error 1100: Your session has expired. Please log in.`
+
+**Qué pasa.** Desde septiembre de 2026 Apple rechaza en el borde cualquier
+petición de GrandSlam cuya cabecera `X-Mme-Client-Info` diga
+`com.apple.dt.Xcode`: contesta un HTML de 190 bytes con un 503 en vez del
+plist de siempre. No es una caída de Apple ni un problema del NAS — la
+petición ni siquiera llega al servicio.
+
+Esa cabecera no la inventa jas: isideload pide el client info al servidor
+anisette (`/v3/client_info`) y lo copia tal cual. O sea que el arreglo está en
+la imagen del anisette, no en el panel.
+
+**Comprobarlo** (desde el NAS, sin tocar nada):
+
+```bash
+# Lo que publica tu anisette ahora mismo
+curl -s http://<ip-del-contenedor-anisette>:6969/v3/client_info
+
+# Los dos client info contra Apple, con la misma petición
+for ci in "com.apple.dt.Xcode/3594.4.19" "com.apple.akd/1.0"; do
+  curl -sk -o /dev/null -w "$ci -> %{http_code}
+" -X POST     -H "Content-Type: text/x-xml-plist"     -H "X-Mme-Client-Info: <MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 ($ci)>"     -H "User-Agent: akd/1.0 CFNetwork/808.1.4"     --data "<plist></plist>" https://gsa.apple.com/grandslam/GsService2
+done
+```
+
+El de Xcode contesta `503` y el de akd no: ahí está el diagnóstico.
+
+> El `-k` es necesario y no es una señal de nada: `gsa.apple.com` se presenta
+> con un certificado de la CA privada de Apple, que no está en el almacén del
+> sistema. isideload lleva ese root incrustado; `curl` no.
+
+**Arreglo.** `docker/anisette/Dockerfile` fija `ANISETTE_REF` en `ae48fa1`
+("Xcode -> authkitd"), que es donde upstream cambió el client info a
+`com.apple.akd`. Si vienes de una imagen anterior, recompila solo el anisette
+y sube la etiqueta en el compose de la app:
+
+```bash
+cd ~/ipa-station && git pull
+bash scripts/build-on-umbrel.sh 0.1.1 4 anisette
+```
+
+Son minutos, no hace falta tocar jas. Luego actualiza la app desde la tienda
+de Umbrel y vuelve a iniciar sesión con el Apple ID: el token viejo ya estaba
+caducado de todos modos.
+
+Si al volver a entrar aparecen errores de provisioning (`-45054` y compañía),
+el estado del anisette se quedó a medias con el client info antiguo: mira la
+sección de arriba para vaciar el volumen `anisette_data` y dejar que
+provisione de cero.
+
+---
+
 ## El 2FA de Apple no pasa
 
 - **El código llega y lo rechaza:** normalmente es que se metió tarde. Caducan

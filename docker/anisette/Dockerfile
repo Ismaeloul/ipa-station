@@ -11,13 +11,25 @@
 # a provisionar contra Apple.
 #
 # Reproduce el Dockerfile de upstream anadiendo el clone con commit fijado.
+#
+# EL COMMIT FIJADO IMPORTA MAS DE LO QUE PARECE:
+# el client info que este servidor publica en /v3/client_info es el que
+# isideload copia tal cual a la cabecera X-Mme-Client-Info de cada peticion a
+# gsa.apple.com. Desde septiembre de 2026 Apple tira con un 503 de 190 bytes
+# cualquier peticion de GrandSlam cuyo client info nombre com.apple.dt.Xcode,
+# asi que un ref anterior a ae48fa1 deja el panel sin poder iniciar sesion.
 
 ############################################################
 # 1. Build
 ############################################################
 FROM debian:stable-20250520-slim AS builder
 
-ARG ANISETTE_REF=2ef18d7da2abe3a6d070aa478f774538b947aaa2
+# ae48fa1 es "Xcode -> authkitd" (13-sep-2026): cambia el client info de
+# com.apple.dt.Xcode a com.apple.akd, el demonio que de verdad hace esta
+# peticion en macOS. Es el arreglo del 503 de Apple, y arrastra ademas el
+# mkdir de tmpProvisioningPath y el "Allow v1ADI to not be provisioned on
+# startup" que ya traia el ref anterior.
+ARG ANISETTE_REF=ae48fa1b5d79f61cbaffa63d4c746239c36c0a0d
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
       ca-certificates ldc git clang dub libz-dev libssl-dev libplist-dev libplist-2.0-4 \

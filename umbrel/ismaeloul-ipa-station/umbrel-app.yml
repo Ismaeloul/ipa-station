@@ -3,7 +3,7 @@ id: ismaeloul-ipa-station
 category: developer
 icon: "https://raw.githubusercontent.com/Ismaeloul/umbrel-app-store/main/ismaeloul-ipa-station/icon.svg"
 name: IPA Station
-version: "0.1.0"
+version: "0.1.2"
 tagline: Instala y refirma apps de iPhone desde tu Umbrel
 description: >-
   IPA Station convierte el Umbrel en el servidor que firma e instala apps en
@@ -28,12 +28,11 @@ description: >-
   usando idevice_pair. El Apple ID se introduce en el panel y su contrasena
   nunca se guarda: solo queda el token de sesion, cifrado.
 releaseNotes: >-
-  Primera version. Panel web con dashboard de dispositivos y caducidades,
-  subida de IPAs con progreso en vivo, alta de Apple ID con 2FA integrado,
-  refresco automatico programado y exportacion del certificado para
-  LiveContainer. El servidor anisette se compila desde el codigo fuente,
-  porque la imagen publica de Docker Hub lleva desde abril de 2025 sin
-  actualizarse y le faltan los arreglos del provisioning.
+  Iniciar sesion con el Apple ID fallaba con un error 503 de Apple y las apps
+  ya instaladas dejaban de refrescarse. Apple rechaza desde septiembre las
+  peticiones que se identifican como Xcode, asi que el servidor anisette pasa
+  a identificarse como akd, que es el proceso que hace esa misma peticion en
+  un Mac de verdad. Hay que recompilar la imagen del anisette en el NAS.
 developer: Ismaeloul
 website: https://github.com/Ismaeloul
 dependencies: []

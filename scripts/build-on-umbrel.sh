@@ -6,7 +6,10 @@
 #
 #   git clone https://github.com/Ismaeloul/ipa-station.git
 #   cd ipa-station
-#   bash scripts/build-on-umbrel.sh
+#   bash scripts/build-on-umbrel.sh [version] [hilos] [todo|anisette|jas]
+#
+# Con el tercer argumento se recompila una sola imagen, por ejemplo
+# `bash scripts/build-on-umbrel.sh 0.1.1 4 anisette`.
 #
 # Tarda. En un N300 cuenta entre 40 y 90 minutos la primera vez: jas es Rust
 # mas WebAssembly y hay que compilar tambien cargo-leptos. Lanzalo con nohup
@@ -26,6 +29,14 @@ VERSION="${1:-0.1.0}"
 # Trabajos de compilacion en paralelo. Por defecto la mitad de los hilos, para
 # que Jellyfin, Immich y AceStream sigan respondiendo mientras esto compila.
 JOBS="${2:-4}"
+# Que imagen compilar: todo | anisette | jas. Sirve para republicar solo una
+# de las dos, que es lo normal cuando se mueve un unico commit de upstream:
+# el anisette son minutos y jas es casi una hora.
+TARGET="${3:-todo}"
+case "$TARGET" in
+  todo|anisette|jas) ;;
+  *) echo "Objetivo desconocido: $TARGET (usa todo, anisette o jas)"; exit 1 ;;
+esac
 
 REGISTRY="localhost:5000"
 IMAGE_NS="${REGISTRY}/ipa-station"
@@ -92,8 +103,12 @@ ensure_registry
 
 # El anisette primero: es el rapido, y si algo esta mal en el entorno se ve
 # enseguida en vez de a la hora de compilar Rust.
-build "anisette-v3-server" "docker/anisette"
-build "jas"                "docker/jas" --build-arg "CARGO_JOBS=${JOBS}"
+if [ "$TARGET" = "todo" ] || [ "$TARGET" = "anisette" ]; then
+  build "anisette-v3-server" "docker/anisette"
+fi
+if [ "$TARGET" = "todo" ] || [ "$TARGET" = "jas" ]; then
+  build "jas"                "docker/jas" --build-arg "CARGO_JOBS=${JOBS}"
+fi
 
 echo
 echo "==> Imagenes publicadas"

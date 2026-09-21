@@ -196,6 +196,25 @@ de arriba: al nacer de cero, `device.json` se escribe ya con `com.apple.akd`.
 
 ---
 
+## "He borrado un MacBook de mi cuenta y desde entonces no entra"
+
+Ese MacBook era el Umbrel.
+
+El servidor anisette se presenta ante Apple como un Mac — literalmente
+`<MacBookPro13,2> <macOS;13.1;22C65>` — porque es lo que Apple espera ver
+haciendo estas peticiones. Así que en **Apple ID → Dispositivos** aparece un
+"MacBook Pro" que no tienes en ninguna mesa: es el NAS.
+
+Si lo borras de ahí, Apple revoca esa sesión al instante. El panel empieza a
+dar `Developer error 1100: Your session has expired` y el refresco automático
+deja de funcionar, aunque la contraseña sea correcta y no hayas tocado nada.
+
+**Arreglo:** volver a iniciar sesión en el panel. Aparecerá un MacBook Pro
+nuevo en la lista de dispositivos — **ese es IPA Station, déjalo ahí**. Si
+vuelves a borrarlo, vuelve a pasar lo mismo.
+
+---
+
 ## Apple responde 429 al iniciar sesión
 
 **Síntomas:** el error ya no es un 503 sino

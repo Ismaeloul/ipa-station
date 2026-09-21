@@ -183,10 +183,16 @@ Son minutos, no hace falta tocar jas. Luego actualiza la app desde la tienda
 de Umbrel y vuelve a iniciar sesión con el Apple ID: el token viejo ya estaba
 caducado de todos modos.
 
-Si al volver a entrar aparecen errores de provisioning (`-45054` y compañía),
-el estado del anisette se quedó a medias con el client info antiguo: mira la
-sección de arriba para vaciar el volumen `anisette_data` y dejar que
-provisione de cero.
+La máquina ya provisionada sigue valiendo: el cambio es solo la cabecera que
+se manda, no los datos que genera el anisette.
+
+Ojo con una cosa si algún día hay que **volver a provisionar**: el
+`serverFriendlyDescription` se escribe en `device.json` la primera vez que
+arranca el servidor y ya no se vuelve a tocar, así que un volumen viejo sigue
+diciendo `com.apple.dt.Xcode` por dentro aunque `/v3/client_info` ya devuelva
+el nuevo. Si aparecen errores de provisioning (`-45054` y compañía) o un 503
+al crear la máquina, vacía el volumen `anisette_data` como explica la sección
+de arriba: al nacer de cero, `device.json` se escribe ya con `com.apple.akd`.
 
 ---
 

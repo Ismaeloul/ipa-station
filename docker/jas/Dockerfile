@@ -61,7 +61,13 @@ RUN git clone https://github.com/jkcoxson/isideload.git /isideload \
 
 # Compilar isideload solo, antes que jas: si el parche no compila, el build
 # falla en minutos en vez de al final de la hora larga de jas.
-RUN cargo check --manifest-path /isideload/isideload/Cargo.toml \
+#
+# Con el Cargo.lock de jas, no con el suyo: el de isideload en c380f27 esta
+# desfasado (apple-codesign 0.29.4, que arrastra x509-certificate 0.25) y no
+# compila por su cuenta. El de jas fija 0.29.7 con x509 0.26, que es lo que
+# de verdad se va a compilar.
+RUN cp /src/Cargo.lock /isideload/Cargo.lock \
+ && cargo check --manifest-path /isideload/isideload/Cargo.toml \
       --no-default-features --features install
 
 RUN cargo leptos build --release

@@ -70,6 +70,14 @@ RUN cp /src/Cargo.lock /isideload/Cargo.lock \
  && cargo check --manifest-path /isideload/isideload/Cargo.toml \
       --no-default-features --features install
 
+# jas guarda la cuenta desde el hilo del login, no desde la peticion web que
+# espera. Con los reintentos del 429 un login puede tardar mas que esa espera
+# (30 s tras el codigo 2FA, 2 s sin el), y antes terminaba bien en Apple y se
+# perdia sin guardarse. Tambien deja de pedir un codigo cuando Apple no lo ha
+# pedido: espera a que el login acabe o pida el 2FA de verdad.
+COPY patches/jas-login-finalize.patch /tmp/jas-login-finalize.patch
+RUN cd /src && git apply /tmp/jas-login-finalize.patch
+
 RUN cargo leptos build --release
 
 ############################################################

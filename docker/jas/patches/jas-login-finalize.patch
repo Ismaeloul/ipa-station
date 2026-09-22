@@ -1,0 +1,97 @@
+diff --git a/src/app/mod.rs b/src/app/mod.rs
+index a1af2c7..c092c3e 100644
+--- a/src/app/mod.rs
++++ b/src/app/mod.rs
+@@ -365,6 +365,10 @@ pub async fn begin_login(
+     let state_clone = state.clone();
+     let session_key_clone = session_key.clone();
+     let result_clone = result_cell.clone();
++    let state_finalize = state.clone();
++    // Set by the login thread the moment Apple asks for a 2FA code.
++    let asked_code = Arc::new(std::sync::atomic::AtomicBool::new(false));
++    let asked_code_thread = asked_code.clone();
+ 
+     // Spawn a thread with its own runtime so the sync 2FA callback doesn't block tokio threads.
+     std::thread::spawn(move || {
+@@ -393,6 +397,7 @@ pub async fn begin_login(
+ 
+             account
+                 .login(&password_clone, move || {
++                    asked_code_thread.store(true, std::sync::atomic::Ordering::SeqCst);
+                     // Block waiting for the 2FA code from the web UI (5-min timeout).
+                     code_rx
+                         .recv_timeout(std::time::Duration::from_secs(300))
+@@ -439,6 +444,21 @@ pub async fn begin_login(
+             })
+         });
+ 
++        // Save the account here, in the login thread, instead of in whichever
++        // web request happens to be waiting. Apple answers a share of GrandSlam
++        // requests with 429 and isideload retries them, so a login can outlive
++        // the UI's wait (30 s after the 2FA code, 2 s without one). Before, a
++        // login that finished late succeeded at Apple and was then dropped.
++        let outcome: Result<LoginData, String> = rt.block_on(async move {
++            match outcome {
++                Ok(data) => {
++                    let saved = finalize_login(state_finalize, Ok(&data)).await;
++                    saved.map(|_| data).map_err(|e| e.to_string())
++                }
++                Err(e) => Err(e),
++            }
++        });
++
+         // Write result back.
+         rt.block_on(async {
+             *result_clone.lock().await = Some(outcome);
+@@ -454,14 +474,20 @@ pub async fn begin_login(
+         });
+     });
+ 
+-    // Wait to see if it resolves without 2FA.
+-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+-
+-    let outcome_opt = result_cell.lock().await.clone();
+-    if let Some(outcome) = outcome_opt {
+-        return finalize_login(state, outcome.as_ref().map_err(|e| e.as_str()))
+-            .await
+-            .map(|_| (session_key, false));
++    // Wait until the login either finishes or asks for a 2FA code. A fixed
++    // 2 s wait made a slow login without 2FA look like it needed a code.
++    for _ in 0..120 {
++        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
++        let outcome_opt = result_cell.lock().await.clone();
++        if let Some(outcome) = outcome_opt {
++            // Already saved by the login thread.
++            return outcome
++                .map(|_| (session_key, false))
++                .map_err(ServerFnError::new);
++        }
++        if asked_code.load(std::sync::atomic::Ordering::SeqCst) {
++            return Ok((session_key, true));
++        }
+     }
+ 
+     // Login is still running
+@@ -513,17 +539,18 @@ pub async fn complete_login(
+         .send(Some(two_factor_code))
+         .map_err(|_| ServerFnError::new("Login session closed"))?;
+ 
+-    // Wait for the background thread to finish.
+-    for _ in 0..30 {
++    // Wait for the background thread to finish. It saves the account itself,
++    // so giving up here only stops the wait, not the login.
++    for _ in 0..120 {
+         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+         let outcome_opt = pending.result.lock().await.clone();
+         if let Some(outcome) = outcome_opt {
+-            return finalize_login(state, outcome.as_ref().map_err(|e| e.as_str())).await;
++            return outcome.map(|_| ()).map_err(ServerFnError::new);
+         }
+     }
+ 
+     Err(ServerFnError::new(
+-        "Login timed out waiting for Apple servers",
++        "Apple is slow to answer. The login keeps going in the background: reload Accounts in a minute before trying again.",
+     ))
+ }
+ 

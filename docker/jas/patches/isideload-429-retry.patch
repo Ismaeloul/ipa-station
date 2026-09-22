@@ -1,0 +1,227 @@
+diff --git a/isideload/Cargo.toml b/isideload/Cargo.toml
+index d4bc598..05b15b9 100644
+--- a/isideload/Cargo.toml
++++ b/isideload/Cargo.toml
+@@ -44,7 +44,7 @@ cbc = { version = "0.2.0", features = ["alloc"] }
+ aes = "0.9.0"
+ aes-gcm = "0.11.0-rc.3"
+ rsa = { version = "0.10.0-rc.17" }
+-tokio = { version = "1.49.0", features = ["fs", "rt-multi-thread"] }
++tokio = { version = "1.49.0", features = ["fs", "rt-multi-thread", "time"] }
+ keyring = { version = "3.6.3", features = ["apple-native", "linux-native-sync-persistent", "windows-native"], optional = true }
+ x509-certificate = { version = "0.26.0", package = "isideload-x509-certificate" }
+ rcgen = { version = "0.14.7", default-features = false, features = ["aws_lc_rs", "pem"] }
+diff --git a/isideload/src/auth/apple_account.rs b/isideload/src/auth/apple_account.rs
+index 137d594..6732fed 100644
+--- a/isideload/src/auth/apple_account.rs
++++ b/isideload/src/auth/apple_account.rs
+@@ -4,7 +4,7 @@ use crate::{
+     anisette::{AnisetteData, AnisetteDataGenerator},
+     auth::{
+         builder::AppleAccountBuilder,
+-        grandslam::{GrandSlam, GrandSlamErrorChecker},
++        grandslam::{GrandSlam, GrandSlamErrorChecker, send_retrying_429},
+     },
+     util::plist::{PlistDataExtract, SensitivePlistAttachment},
+ };
+@@ -197,29 +197,34 @@ impl AppleAccount {
+ 
+         let submit_code_url = self.grandslam_client.get_url("validateCode")?;
+ 
+-        self.grandslam_client
+-            .get(&request_code_url)?
+-            .headers(self.build_2fa_headers(&anisette_data).await?)
+-            .send()
+-            .await
+-            .context("Failed to request trusted device 2fa")?
+-            .error_for_status()
+-            .context("Trusted device 2FA request failed")?;
++        let headers = self.build_2fa_headers(&anisette_data).await?;
++        send_retrying_429(|| {
++            Ok(self
++                .grandslam_client
++                .get(&request_code_url)?
++                .headers(headers.clone()))
++        })
++        .await
++        .context("Failed to request trusted device 2fa")?
++        .error_for_status()
++        .context("Trusted device 2FA request failed")?;
+ 
+         info!("Trusted device 2FA request sent");
+ 
+         let code =
+             two_factor_callback().ok_or_else(|| report!("No 2FA code provided, aborting"))?;
+ 
+-        let res = self
+-            .grandslam_client
+-            .get(&submit_code_url)?
+-            .headers(self.build_2fa_headers(&anisette_data).await?)
+-            .header("security-code", code)
+-            .send()
+-            .await
+-            .context("Failed to submit trusted device 2fa code")?
+-            .error_for_status()
++        let headers = self.build_2fa_headers(&anisette_data).await?;
++        let res = send_retrying_429(|| {
++            Ok(self
++                .grandslam_client
++                .get(&submit_code_url)?
++                .headers(headers.clone())
++                .header("security-code", code.clone()))
++        })
++        .await
++        .context("Failed to submit trusted device 2fa code")?
++        .error_for_status()
+             .context("Trusted device 2FA code submission failed")?
+             .text()
+             .await
+@@ -249,14 +254,17 @@ impl AppleAccount {
+ 
+         let request_code_url = self.grandslam_client.get_url("secondaryAuth")?;
+ 
+-        self.grandslam_client
+-            .get_sms(&request_code_url)?
+-            .headers(self.build_2fa_headers(&anisette_data).await?)
+-            .send()
+-            .await
+-            .context("Failed to request SMS 2FA")?
+-            .error_for_status()
+-            .context("SMS 2FA request failed")?;
++        let headers = self.build_2fa_headers(&anisette_data).await?;
++        send_retrying_429(|| {
++            Ok(self
++                .grandslam_client
++                .get_sms(&request_code_url)?
++                .headers(headers.clone()))
++        })
++        .await
++        .context("Failed to request SMS 2FA")?
++        .error_for_status()
++        .context("SMS 2FA request failed")?;
+ 
+         info!("SMS 2FA request sent");
+ 
+@@ -280,14 +288,16 @@ impl AppleAccount {
+             HeaderValue::from_static("application/json, text/javascript, */*; q=0.01"),
+         );
+ 
+-        let res = self
+-            .grandslam_client
+-            .post("https://gsa.apple.com/auth/verify/phone/securitycode")?
+-            .headers(headers)
+-            .body(body.to_string())
+-            .send()
+-            .await
+-            .context("Failed to submit SMS 2FA code")?;
++        let body_text = body.to_string();
++        let res = send_retrying_429(|| {
++            Ok(self
++                .grandslam_client
++                .post("https://gsa.apple.com/auth/verify/phone/securitycode")?
++                .headers(headers.clone())
++                .body(body_text.clone()))
++        })
++        .await
++        .context("Failed to submit SMS 2FA code")?;
+ 
+         if !res.status().is_success() {
+             let status = res.status();
+diff --git a/isideload/src/auth/grandslam.rs b/isideload/src/auth/grandslam.rs
+index 1876812..0d7a049 100644
+--- a/isideload/src/auth/grandslam.rs
++++ b/isideload/src/auth/grandslam.rs
+@@ -13,6 +13,55 @@ use crate::{SideloadError, anisette::AnisetteClientInfo, util::plist::PlistDataE
+ const APPLE_ROOT: &[u8] = include_bytes!("./apple_root.der");
+ const URL_BAG: &str = "https://gsa.apple.com/grandslam/GsService2/lookup";
+ 
++/// How many times a GrandSlam request is attempted before giving up.
++///
++/// Apple's edge answers a share of well-formed requests with a bare
++/// `429 Too Many Requests` HTML page, in windows that last from seconds to a
++/// few minutes. It is not tied to the account or to how many requests this
++/// client has made: identical requests from two machines, in the same minute,
++/// get a mix of `200` and `429`. Retrying gets through; failing on the first
++/// answer turns a transient edge hiccup into a failed sign-in.
++///
++/// Ported from nab138/isideload#19, extended to the URL bag and 2FA requests,
++/// which go through the same edge.
++const MAX_ATTEMPTS: u32 = 6;
++
++/// Wait before retrying, doubling each time: 1s, 2s, 4s, 8s, 16s.
++async fn backoff(attempt: u32) {
++    tokio::time::sleep(std::time::Duration::from_secs(1u64 << attempt)).await;
++}
++
++/// Send a request, retrying while Apple's edge answers 429.
++///
++/// `build` runs once per attempt because `send` consumes the builder. Every
++/// other status reaches the caller unchanged.
++pub(crate) async fn send_retrying_429(
++    mut build: impl FnMut() -> Result<reqwest::RequestBuilder, Report>,
++) -> Result<reqwest::Response, Report> {
++    let mut attempt = 0;
++    loop {
++        let response = build()?
++            .send()
++            .await
++            .context("Failed to send grandslam request")?;
++
++        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
++            && attempt + 1 < MAX_ATTEMPTS
++        {
++            debug!(
++                "GrandSlam answered 429, retrying ({} of {})",
++                attempt + 1,
++                MAX_ATTEMPTS
++            );
++            backoff(attempt).await;
++            attempt += 1;
++            continue;
++        }
++
++        return Ok(response);
++    }
++}
++
+ pub struct GrandSlam {
+     pub client: reqwest::Client,
+     pub client_info: AnisetteClientInfo,
+@@ -41,10 +90,7 @@ impl GrandSlam {
+         base_headers: HeaderMap,
+     ) -> Result<Dictionary, Report> {
+         debug!("Fetching URL bag from GrandSlam");
+-        let resp = client
+-            .get(URL_BAG)
+-            .headers(base_headers)
+-            .send()
++        let resp = send_retrying_429(|| Ok(client.get(URL_BAG).headers(base_headers.clone())))
+             .await
+             .context("Failed to fetch URL Bag")?
+             .text()
+@@ -112,14 +158,17 @@ impl GrandSlam {
+         body: &Dictionary,
+         additional_headers: Option<HeaderMap>,
+     ) -> Result<Dictionary, Report> {
+-        let resp = self
+-            .post(url)?
+-            .headers(additional_headers.unwrap_or_else(reqwest::header::HeaderMap::new))
+-            .body(plist_to_xml_string(body))
+-            .send()
+-            .await
+-            .context("Failed to send grandslam request")?
+-            .error_for_status()
++        let extra_headers = additional_headers.unwrap_or_else(reqwest::header::HeaderMap::new);
++        let xml_body = plist_to_xml_string(body);
++
++        let resp = send_retrying_429(|| {
++            Ok(self
++                .post(url)?
++                .headers(extra_headers.clone())
++                .body(xml_body.clone()))
++        })
++        .await?
++        .error_for_status()
+             .context("Received error response from grandslam")?
+             .text()
+             .await

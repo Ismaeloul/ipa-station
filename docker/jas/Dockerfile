@@ -38,6 +38,32 @@ ENV SQLX_OFFLINE=true
 ARG CARGO_JOBS=4
 ENV CARGO_BUILD_JOBS=${CARGO_JOBS}
 
+# isideload con reintentos ante el 429 de Apple.
+#
+# Desde septiembre de 2026 el borde de gsa.apple.com contesta 429 a una parte
+# de las peticiones bien formadas, al azar y en ventanas de segundos a pocos
+# minutos. No va por cuenta ni por IP: doce peticiones identicas seguidas dan
+# mitad 200 y mitad 429 (medido en nab138/isideload#19). Un login son dos
+# peticiones mas las del 2FA, e isideload se rendia al primer 429, asi que
+# iniciar sesion fallaba casi siempre.
+#
+# El parche es ese PR portado al fork que usa jas (jkcoxson/isideload, rama
+# feature/rsd, el mismo commit que ya fija el Cargo.lock de jas): reintenta
+# solo los 429, esperando 1, 2, 4, 8 y 16 s, en el login, en la bolsa de URLs
+# y en las peticiones del 2FA. Cualquier otro codigo llega igual que antes.
+ARG ISIDELOAD_REF=c380f27f93bccf5bc5cce2a7cef62479207cc012
+COPY patches/isideload-429-retry.patch /tmp/isideload-429-retry.patch
+RUN git clone https://github.com/jkcoxson/isideload.git /isideload \
+ && cd /isideload \
+ && git checkout "${ISIDELOAD_REF}" \
+ && git apply /tmp/isideload-429-retry.patch \
+ && printf '\n[patch."https://github.com/jkcoxson/isideload"]\nisideload = { path = "/isideload/isideload" }\n' >> /src/Cargo.toml
+
+# Compilar isideload solo, antes que jas: si el parche no compila, el build
+# falla en minutos en vez de al final de la hora larga de jas.
+RUN cargo check --manifest-path /isideload/isideload/Cargo.toml \
+      --no-default-features --features install
+
 RUN cargo leptos build --release
 
 ############################################################

@@ -158,8 +158,11 @@ curl -s http://<ip-del-contenedor-anisette>:6969/v3/client_info
 
 # Los dos client info contra Apple, con la misma petición
 for ci in "com.apple.dt.Xcode/3594.4.19" "com.apple.akd/1.0"; do
-  curl -sk -o /dev/null -w "$ci -> %{http_code}
-" -X POST     -H "Content-Type: text/x-xml-plist"     -H "X-Mme-Client-Info: <MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 ($ci)>"     -H "User-Agent: akd/1.0 CFNetwork/808.1.4"     --data "<plist></plist>" https://gsa.apple.com/grandslam/GsService2
+  curl -sk -o /dev/null -w "$ci -> %{http_code}\n" -X POST \
+    -H "Content-Type: text/x-xml-plist" \
+    -H "X-Mme-Client-Info: <MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 ($ci)>" \
+    -H "User-Agent: akd/1.0 CFNetwork/808.1.4" \
+    --data "<plist></plist>" https://gsa.apple.com/grandslam/GsService2
 done
 ```
 
@@ -224,25 +227,31 @@ Failed to send proof login request
 HTTP status client error (429 Too Many Requests)
 ```
 
-**Buenas noticias primero:** que el fallo sea en el *proof* y no en el
-*initial* significa que el primer paso funcionó — Apple aceptó la identidad
-del cliente y devolvió el salt y el reto SRP de la cuenta. Lo que falla es el
-segundo paso.
+**Qué no es.** No es un límite de tu cuenta ni de tu IP, aunque lo parezca.
+Lo delata que cambiar de Apple ID no lo arregla, ni cambiar de identidad del
+anisette, ni esperar horas.
 
-**Qué es.** Apple limita los intentos de autenticación de esa cuenta. Se
-dispara con varios intentos seguidos en poco rato (tres en medio minuto ya
-cuentan) y desde septiembre de 2026 está especialmente sensible: media
-comunidad de sideloading reintentó a la vez cuando se arregló lo del client
-info.
+**Qué es.** Desde septiembre de 2026 el borde de `gsa.apple.com` contesta 429
+a una parte de las peticiones bien formadas, al azar y en ventanas de segundos
+a pocos minutos. Está medido en
+[nab138/isideload#19](https://github.com/nab138/isideload/pull/19): doce
+peticiones idénticas seguidas, mitad 200 y mitad 429, sin tocar ninguna
+cuenta. Un login son dos peticiones —más las del 2FA— e isideload se rendía
+al primer 429, así que iniciar sesión fallaba casi siempre.
 
-No es un bloqueo de la IP. Se comprueba mandando una petición cualquiera al
-mismo endpoint desde el NAS: si sigue contestando algo que no sea un 429, el
-borde no te tiene vetado y lo limitado es el flujo de login de la cuenta.
+**Arreglo.** La imagen de jas 0.1.1 compila isideload con
+`docker/jas/patches/isideload-429-retry.patch`: reintenta solo los 429,
+esperando 1, 2, 4, 8 y 16 segundos, en el login, en la bolsa de URLs y en el
+2FA. Con eso el login puede tardar hasta medio minuto más, pero entra.
 
-**Qué hacer.** Esperar, sin reintentar. Cada intento nuevo reinicia la
-ventana. Una hora larga, y luego **un** intento, con la contraseña escrita y
-el teléfono a mano para el 2FA. Si vuelve a salir, deja pasar dos o tres
-horas; reintentar en ráfaga es lo único que lo empeora de verdad.
+```bash
+cd ~/ipa-station && git pull
+bash scripts/build-on-umbrel.sh 0.1.1 4 jas
+```
+
+**Mientras no tengas esa imagen:** reintentar a mano sí sirve, al contrario
+de lo que parece. Cada intento es una tirada nueva; deja un minuto entre uno y
+otro para salir de la ventana mala.
 
 ---
 
